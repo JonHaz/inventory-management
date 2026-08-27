@@ -204,6 +204,28 @@ class TestSpendingEndpoints:
             category_data = data[0]
             assert "category" in category_data or "name" in category_data
 
+    def test_category_spending_percentages_sum_to_100(self, client):
+        """Test that category spending shares add up to a whole."""
+        response = client.get("/api/spending/categories")
+        data = response.json()
+
+        if len(data) > 0:
+            total = sum(category["percentage"] for category in data)
+            # Each share is rounded to 1dp, so allow for accumulated rounding drift
+            assert abs(total - 100.0) < 0.5
+
+    def test_category_spending_percentages_match_amounts(self, client):
+        """Test that each category's share is derived from its amount."""
+        response = client.get("/api/spending/categories")
+        data = response.json()
+
+        if len(data) > 0:
+            total_amount = sum(category["amount"] for category in data)
+
+            for category in data:
+                expected = category["amount"] / total_amount * 100
+                assert abs(category["percentage"] - expected) < 0.1
+
     def test_get_recent_transactions(self, client):
         """Test getting recent transactions."""
         response = client.get("/api/spending/transactions")

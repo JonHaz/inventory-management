@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from datetime import date
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from pydantic import BaseModel
@@ -90,17 +91,6 @@ class DemandForecast(BaseModel):
     trend: str
     period: str
 
-class BacklogItem(BaseModel):
-    id: str
-    order_id: str
-    item_sku: str
-    item_name: str
-    quantity_needed: int
-    quantity_available: int
-    days_delayed: int
-    priority: str
-    has_purchase_order: Optional[bool] = False
-
 class PurchaseOrder(BaseModel):
     id: str
     backlog_item_id: str
@@ -111,6 +101,19 @@ class PurchaseOrder(BaseModel):
     status: str
     created_date: str
     notes: Optional[str] = None
+
+class BacklogItem(BaseModel):
+    id: str
+    order_id: str
+    item_sku: str
+    item_name: str
+    quantity_needed: int
+    quantity_available: int
+    days_delayed: int
+    priority: str
+    has_purchase_order: Optional[bool] = False
+    purchase_order_id: Optional[str] = None
+    purchase_order: Optional[PurchaseOrder] = None
 
 class CreatePurchaseOrderRequest(BaseModel):
     backlog_item_id: str
@@ -169,15 +172,54 @@ def get_demand_forecasts():
 @app.get("/api/backlog", response_model=List[BacklogItem])
 def get_backlog():
     """Get backlog items with purchase order status"""
-    # Add has_purchase_order flag to each backlog item
+    # Attach the purchase order itself, not just a flag: the dashboard switches its
+    # Create PO / View PO button on purchase_order_id, so a bare boolean left the
+    # button showing "Create PO" again after a page reload.
     result = []
     for item in backlog_items:
         item_dict = dict(item)
-        # Check if this backlog item has a purchase order
-        has_po = any(po["backlog_item_id"] == item["id"] for po in purchase_orders)
-        item_dict["has_purchase_order"] = has_po
+        po = next((po for po in purchase_orders if po["backlog_item_id"] == item["id"]), None)
+        item_dict["has_purchase_order"] = po is not None
+        item_dict["purchase_order_id"] = po["id"] if po else None
+        item_dict["purchase_order"] = po
         result.append(item_dict)
     return result
+
+@app.get("/api/purchase-orders", response_model=List[PurchaseOrder])
+def get_purchase_orders():
+    """Get all purchase orders"""
+    return purchase_orders
+
+@app.post("/api/purchase-orders", response_model=PurchaseOrder, status_code=201)
+def create_purchase_order(request: CreatePurchaseOrderRequest):
+    """Raise a purchase order against a backlog item"""
+    backlog_item = next((b for b in backlog_items if b["id"] == request.backlog_item_id), None)
+    if not backlog_item:
+        raise HTTPException(status_code=404, detail="Backlog item not found")
+
+    if any(po["backlog_item_id"] == request.backlog_item_id for po in purchase_orders):
+        raise HTTPException(status_code=409, detail="Backlog item already has a purchase order")
+
+    if request.quantity <= 0:
+        raise HTTPException(status_code=422, detail="Quantity must be greater than zero")
+    if request.unit_cost < 0:
+        raise HTTPException(status_code=422, detail="Unit cost cannot be negative")
+
+    # IDs are sequential over the in-memory list rather than a max() of existing ids,
+    # because there is no database to hand out keys and nothing here deletes POs.
+    purchase_order = {
+        "id": f"PO-2025-{len(purchase_orders) + 1:04d}",
+        "backlog_item_id": request.backlog_item_id,
+        "supplier_name": request.supplier_name,
+        "quantity": request.quantity,
+        "unit_cost": request.unit_cost,
+        "expected_delivery_date": request.expected_delivery_date,
+        "status": "pending",
+        "created_date": date.today().isoformat(),
+        "notes": request.notes,
+    }
+    purchase_orders.append(purchase_order)
+    return purchase_order
 
 @app.get("/api/dashboard/summary")
 def get_dashboard_summary(
@@ -220,7 +262,17 @@ def get_monthly_spending():
 @app.get("/api/spending/categories")
 def get_category_spending():
     """Get spending by category"""
-    return category_spending
+    # The `percentage` field in spending.json is stale -- its values sum to 123.6%
+    # and disagree with the amounts (Raw Materials is the smaller amount but the
+    # larger share). Derive the share from the amounts so the two can't drift again.
+    total = sum(category["amount"] for category in category_spending)
+    return [
+        {
+            **category,
+            "percentage": round(category["amount"] / total * 100, 1) if total else 0.0,
+        }
+        for category in category_spending
+    ]
 
 @app.get("/api/spending/transactions")
 def get_recent_transactions():

@@ -74,6 +74,16 @@ export const api = {
     return response.data
   },
 
+  async getPurchaseOrders() {
+    const response = await axios.get(`${API_BASE_URL}/purchase-orders`)
+    return response.data
+  },
+
+  async createPurchaseOrder(poData) {
+    const response = await axios.post(`${API_BASE_URL}/purchase-orders`, poData)
+    return response.data
+  },
+
   async getTasks() {
     const response = await axios.get(`${API_BASE_URL}/tasks`)
     return response.data
@@ -93,14 +103,4 @@ export const api = {
     const response = await axios.patch(`${API_BASE_URL}/tasks/${taskId}`)
     return response.data
   },
-
-  async createPurchaseOrder(purchaseOrderData) {
-    const response = await axios.post(`${API_BASE_URL}/purchase-orders`, purchaseOrderData)
-    return response.data
-  },
-
-  async getPurchaseOrderByBacklogItem(backlogItemId) {
-    const response = await axios.get(`${API_BASE_URL}/purchase-orders/${backlogItemId}`)
-    return response.data
-  }
 }
