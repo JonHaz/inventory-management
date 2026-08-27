@@ -106,14 +106,18 @@ export default {
   border-bottom: 1px solid #e2e8f0;
   padding: 0.75rem 0;
   position: sticky;
-  top: 70px;
+  /* Sits directly under the sticky top bar. Tied to the token rather than a
+     literal so the two stay in sync if the bar's height ever changes. */
+  top: var(--topbar-height);
   z-index: 90;
 }
 
 .filters-container {
-  max-width: 1600px;
+  /* Matches .main-content's max-width and horizontal padding so the filter row
+     and the page content share the same left edge next to the sidebar. */
+  max-width: var(--content-max-width);
   margin: 0 auto;
-  padding: 0 2rem;
+  padding: 0 var(--space-8);
   display: flex;
   align-items: center;
   gap: 1rem;
